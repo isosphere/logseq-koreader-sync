@@ -1,0 +1,36 @@
+{
+  "name": "logseq-koreader-sync",
+  "version": "1.0.0",
+  "title": "Logseq Koreader Sync",
+  "description": "A koreader to logseq syncing plugin. Reference and read annotations in your notebook.",
+  "main": "dist/index.html",
+  "targets": {
+    "main": false
+  },
+  "default": "dist/index.html",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isosphere/logseq-koreader-sync/tree/master/logseq-koreader-sync"
+  },
+  "author": "Matthew Scheffel",
+  "scripts": {
+    "dev": "parcel ./index.html --public-url ./",
+    "build": "parcel build --public-url . --no-source-maps index.html"
+  },
+  "license": "MIT",
+  "logseq": {
+    "id": "_isosphere-koreader-sync",
+    "title": "Logseq Koreader Sync",
+    "icon": "./icon.png"
+  },
+  "dependencies": {
+    "@logseq/libs": "^0.0.17",
+    "idb-keyval": "^6.2.1",
+    "luaparse": "^0.3.1"
+  },
+  "devDependencies": {
+    "buffer": "^6.0.3",
+    "parcel": "^2.11",
+    "path-browserify": "^1.0.0"
+  }
+}
