@@ -23,3 +23,5 @@ As of this writing, it is working and I think useful, but there may be bugs I ha
 4. Reference the created blocks, but don't alter them.
 
 I use [Syncthing](https://syncthing.net/) on Android to ensure that I have a local copy of my metadata.
+
+![demo animation](demo.gif)
