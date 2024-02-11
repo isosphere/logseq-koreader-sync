@@ -225,6 +225,8 @@ function main () {
           return; // user cancelled, or something went wrong
         }
 
+        await logseq.Editor.updateBlock(targetBlock!.uuid, `# ⚙ Processing KOReader Annotations ...`)
+
         // FIXME: change the max value to the number of files in the directory
         let fileCount = 0;
         for await (const _ of walkDirectory(directoryHandle)) { fileCount++; };
