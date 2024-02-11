@@ -1,5 +1,5 @@
 import '@logseq/libs'
-import { SettingSchemaDesc, BlockEntity, IBatchBlock } from '@logseq/libs/dist/LSPlugin'
+import { SettingSchemaDesc, BlockEntity, IBatchBlock, BlockUUID } from '@logseq/libs/dist/LSPlugin'
 import { parse as luaparse } from 'luaparse'
 import { ProgressNotification } from './progress'
 import { get as getStorage, set as setStorage } from 'idb-keyval';
@@ -33,15 +33,19 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
   if (typeof metadata.bookmarks === 'object' && Object.keys(metadata.bookmarks).length === 0) {
     return null;
   }
+
+  let authors = metadata.doc_props.authors;
+  if (authors) {
+    authors = authors.replace(/\\\n/g, ', '); // this seems to be how KOReader stores multiple authors; at least from Calibre
+  }
   
   if (!metadata.bookmarks) {
     return {
       content: `## ${metadata.doc_props.title}`,
       properties: {
-        'authors': metadata.doc_props.authors,
+        'authors': authors,
         'description': truncateString(metadata.doc_props.description, MAXIMUM_DESCRIPTION_LENGTH),
         'language': metadata.doc_props.language,
-        'collapsed': COLLAPSE_BLOCKS,
       }
     }
   }
@@ -56,12 +60,12 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
 
     bookmarks.push(
       {
-        content: `> ${bookmark.notes}`,
+        content: `> ${bookmark.notes.replace('-', '\\-')}`, // escape dashes; they're used for lists in logseq
         properties: {
           'datetime': bookmark.datetime,
           'page': bookmark.page,
           'chapter': bookmark.chapter,
-          'collapsed': COLLAPSE_BLOCKS,
+          'collapsed': COLLAPSE_BLOCKS && personal_note.length > 0,
         },
         children: personal_note
       }
@@ -71,7 +75,7 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
   return {
     content: `## ${metadata.doc_props.title}`,
     properties: {
-      'authors': metadata.doc_props.authors,
+      'authors': authors,
       'description': truncateString(metadata.doc_props.description, MAXIMUM_DESCRIPTION_LENGTH),
       'language': metadata.doc_props.language,
       'collapsed': COLLAPSE_BLOCKS,
@@ -198,6 +202,7 @@ function main () {
 
         let targetBlock : BlockEntity | null = pageBlocksTree[0]!
 
+        const original_content = targetBlock?.content;
         if (targetBlock === null || targetBlock === undefined) {
           targetBlock = await logseq.Editor.insertBlock(currentPage.uuid, '🚀 Please Select KOReader Metadata Directory ...',)
         } else {
@@ -212,34 +217,173 @@ function main () {
         }
 
         if (!directoryHandle || !permission) {
-          directoryHandle = await window.showDirectoryPicker() // get a DirectoryHandle that will allow us to read the contents of the directory
+          try {
+            directoryHandle = await window.showDirectoryPicker() // get a DirectoryHandle that will allow us to read the contents of the directory
+          } catch (e) {
+            if (original_content) {
+              await logseq.Editor.updateBlock(targetBlock!.uuid, original_content)
+            } else {
+              await logseq.Editor.updateBlock(targetBlock!.uuid, "Sync cancelled by user.")
+            }
+            console.error(e);
+            return;
+          }
           setStorage('logseq_koreader_sync__directoryHandle', directoryHandle);
         }        
 
         if (!directoryHandle) {
           console.error('No directory selected / found.')
-          return; // user cancelled, or something went wrong
+          return; // something went wrong
         }
+
+        await logseq.Editor.updateBlock(targetBlock!.uuid, `# ⚙ Processing KOReader Annotations ...`)
 
         // FIXME: change the max value to the number of files in the directory
         let fileCount = 0;
         for await (const _ of walkDirectory(directoryHandle)) { fileCount++; };
 
+        // iterate over all blocks in this target page, and collect the titles, authors, and uuids and place them in a dictionary
+        let ret;
+        try {
+          ret = await logseq.DB.datascriptQuery(`
+          [
+              :find (pull ?b [:block/content :block/uuid]) ?authors
+              :where
+                [?b :block/parent ?p]
+                [?p :block/uuid #uuid "${targetBlock!.uuid}"]
+                [?b :block/properties ?props]
+                [(get ?props :authors) ?authors]
+          ]
+          `)
+        } catch (e) {
+          console.error("Error while iterating over blocks in the target page: ", e);
+          return;
+        }
+
+        const titleMatch : RegExp = /##\s+(.*?)\n/;
+
+        let existingBlocks = {}
+        for (const block of ret) {
+          const authors = block[1];
+          const content = block[0]["content"];
+          const match = content?.match(titleMatch);
+          let title = match[1];
+
+          const key = authors + "___" +  title;
+          if (!(key in existingBlocks)) {
+            existingBlocks[key] = block[0]["uuid"];
+          }
+        }
+
         const syncProgress = new ProgressNotification("Syncing Koreader Annotations to Logseq:", fileCount);
-        
         for await (const fileHandle of walkDirectory(directoryHandle)) {
           var text = await fileHandle.text();
-          var block = lua_to_block(text);
+          var parsed_block = lua_to_block(text);
 
-          if (block) {
-            await logseq.Editor.insertBatchBlock(targetBlock!.uuid, [block], {
-              sibling: false
-            })
+          if (parsed_block) {
+            let key: string;
+            if (parsed_block.properties!.authors === undefined) {
+              key = "___" + parsed_block.content.substring(3);
+            } else {
+              key = parsed_block.properties!.authors + "___" + parsed_block.content.substring(3);
+            }
+
+            // Has this been synced before?
+            if (key in existingBlocks) {             
+              const existing_block = await logseq.Editor.getBlock(existingBlocks[key]);
+              if (existing_block === null) {
+                console.error("Block not found, but we also just found it - which is pretty weird: ", existingBlocks[key]);
+                continue;
+              }
+
+              // find the bookmarks block
+              let existing_bookmark_blocks;
+              let existing_bookmark_block_uuid;
+
+              for (const child of existing_block!.children!) {
+                let child_block = await logseq.Editor.getBlock(child[1] as BlockEntity);
+
+                if (child_block!.content === "### Bookmarks") {
+                  existing_bookmark_blocks = child_block!.children;
+                  existing_bookmark_block_uuid = child[1];
+                  break;
+                }
+              }
+
+              if (existing_bookmark_blocks === undefined) {
+                console.error("Bookmarks not found for block ", existingBlocks[key]);
+                continue;
+              }
+
+              // iterate over bookmarks and build a dictionary for easy lookup
+              let existing_bookmarks = {};
+              for (const bookmark of existing_bookmark_blocks) {
+                let bookmark_block = await logseq.Editor.getBlock(bookmark[1] as BlockEntity);
+
+                const content_start = bookmark_block!.content!.indexOf("\n> ");     // not ideal
+                const content = bookmark_block!.content!.substring(content_start+3).replace('-', '\-');
+
+                existing_bookmarks[content] = bookmark[1];
+              }
+
+              // iterate over bookmarks in `block`, checking if they already exist
+              // the first child of `parsed_block` is the "### Bookmarks" block
+              for (const bookmark of parsed_block.children![0].children!) {
+                let key = bookmark.content.substring(2);
+
+                // does this parsed block have a personal note?
+                let parsed_personal_note = false;
+                if (bookmark.children && bookmark.children.length > 0) {
+                  parsed_personal_note = true;
+                }
+
+                // existing bookmark, check personal note
+                if (key in existing_bookmarks) {
+                  let existing_bookmark = await logseq.Editor.getBlock(existing_bookmarks[key]);
+                  
+                  // personal note exists in graph
+                  if (existing_bookmark!.children && existing_bookmark!.children!.length > 0) {
+                    let existing_note = existing_bookmark!.children![0];
+
+                    if (!parsed_personal_note) {
+                      // delete it
+                      await logseq.Editor.removeBlock(existing_note[1] as BlockUUID);
+                    } else {
+                      let existing_note_block = await logseq.Editor.getBlock(existing_note[1] as BlockEntity);
+
+                      // if the existing note is different, update it
+                      if (existing_note_block!.content !== bookmark.children![0].content) {
+                        await logseq.Editor.updateBlock(existing_note[1] as string, bookmark.children![0].content);
+                      }
+                    }
+                  } 
+                  // personal note does not exist in graph
+                  else {
+                    // add it
+                    if (parsed_personal_note) {
+                      await logseq.Editor.insertBatchBlock(existing_bookmark![1] as string, [bookmark.children![0]], {
+                        sibling: false
+                      })
+                    }
+                  }
+                } 
+                // new bookmark, add it
+                else {
+                  await logseq.Editor.insertBatchBlock(existing_bookmark_block_uuid, [bookmark], {
+                    sibling: false
+                  })
+                }
+              }
+            } else {
+              await logseq.Editor.insertBatchBlock(targetBlock!.uuid, [parsed_block], {
+                sibling: false
+              })
+            }
           }
           syncProgress.increment(1);
         }
 
-        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 KOReader - Sync Started at ${syncTimeLabel}`)
+        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 KOReader - Sync Initated at ${syncTimeLabel}`)
         syncProgress.destruct();
       } catch (e) {
         logseq.UI.showMsg(e.toString(), 'warning')
