@@ -36,7 +36,7 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
 
   let authors = metadata.doc_props.authors;
   if (authors) {
-    authors = authors.replace(/\\\n/g, ','); // this seems to be how KOReader stores multiple authors; at least from Calibre
+    authors = authors.replace(/\\\n/g, ', '); // this seems to be how KOReader stores multiple authors; at least from Calibre
   }
   
   if (!metadata.bookmarks) {
@@ -272,12 +272,8 @@ function main () {
             const key = block.properties!.authors + "___" + block.content.substring(3);
 
             if (key in existingBlocks) {             
-              await logseq.Editor.updateBlock(existingBlocks[key], block.content, block.properties);
-              
               // enumerate block children, and evaluate if they need updating
               // TODO
-
-
             } else {
               await logseq.Editor.insertBatchBlock(targetBlock!.uuid, [block], {
                 sibling: false
