@@ -33,12 +33,17 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
   if (typeof metadata.bookmarks === 'object' && Object.keys(metadata.bookmarks).length === 0) {
     return null;
   }
+
+  let authors = metadata.doc_props.authors;
+  if (authors) {
+    authors = authors.replace(/\\\n/g, ','); // this seems to be how KOReader stores multiple authors; at least from Calibre
+  }
   
   if (!metadata.bookmarks) {
     return {
       content: `## ${metadata.doc_props.title}`,
       properties: {
-        'authors': metadata.doc_props.authors,
+        'authors': authors,
         'description': truncateString(metadata.doc_props.description, MAXIMUM_DESCRIPTION_LENGTH),
         'language': metadata.doc_props.language,
         'collapsed': COLLAPSE_BLOCKS,
@@ -71,7 +76,7 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
   return {
     content: `## ${metadata.doc_props.title}`,
     properties: {
-      'authors': metadata.doc_props.authors,
+      'authors': authors,
       'description': truncateString(metadata.doc_props.description, MAXIMUM_DESCRIPTION_LENGTH),
       'language': metadata.doc_props.language,
       'collapsed': COLLAPSE_BLOCKS,
@@ -266,7 +271,7 @@ function main () {
           if (block) {
             const key = block.properties!.authors + "___" + block.content.substring(3);
 
-            if (key in existingBlocks) {
+            if (key in existingBlocks) {             
               await logseq.Editor.updateBlock(existingBlocks[key], block.content, block.properties);
               
               // enumerate block children, and evaluate if they need updating
