@@ -46,7 +46,6 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
         'authors': authors,
         'description': truncateString(metadata.doc_props.description, MAXIMUM_DESCRIPTION_LENGTH),
         'language': metadata.doc_props.language,
-        'collapsed': COLLAPSE_BLOCKS,
       }
     }
   }
@@ -66,7 +65,7 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
           'datetime': bookmark.datetime,
           'page': bookmark.page,
           'chapter': bookmark.chapter,
-          'collapsed': COLLAPSE_BLOCKS,
+          'collapsed': COLLAPSE_BLOCKS && personal_note.length > 0,
         },
         children: personal_note
       }
