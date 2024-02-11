@@ -1,5 +1,5 @@
 import '@logseq/libs'
-import { SettingSchemaDesc, BlockEntity, IBatchBlock } from '@logseq/libs/dist/LSPlugin'
+import { SettingSchemaDesc, BlockEntity, IBatchBlock, BlockUUID } from '@logseq/libs/dist/LSPlugin'
 import { parse as luaparse } from 'luaparse'
 import { ProgressNotification } from './progress'
 import { get as getStorage, set as setStorage } from 'idb-keyval';
@@ -60,7 +60,7 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
 
     bookmarks.push(
       {
-        content: `> ${bookmark.notes}`,
+        content: `> ${bookmark.notes.replace('-', '\\-')}`, // escape dashes; they're used for lists in logseq
         properties: {
           'datetime': bookmark.datetime,
           'page': bookmark.page,
@@ -218,7 +218,7 @@ function main () {
 
         if (!directoryHandle || !permission) {
           try {
-          directoryHandle = await window.showDirectoryPicker() // get a DirectoryHandle that will allow us to read the contents of the directory
+            directoryHandle = await window.showDirectoryPicker() // get a DirectoryHandle that will allow us to read the contents of the directory
           } catch (e) {
             if (original_content) {
               await logseq.Editor.updateBlock(targetBlock!.uuid, original_content)
@@ -278,20 +278,104 @@ function main () {
         const syncProgress = new ProgressNotification("Syncing Koreader Annotations to Logseq:", fileCount);
         for await (const fileHandle of walkDirectory(directoryHandle)) {
           var text = await fileHandle.text();
-          var block = lua_to_block(text);
+          var parsed_block = lua_to_block(text);
 
-          if (block) {
+          if (parsed_block) {
             let key: string;
-            if (block.properties!.authors === undefined) {
-              key = "___" + block.content.substring(3);
+            if (parsed_block.properties!.authors === undefined) {
+              key = "___" + parsed_block.content.substring(3);
             } else {
-              key = block.properties!.authors + "___" + block.content.substring(3);
+              key = parsed_block.properties!.authors + "___" + parsed_block.content.substring(3);
             }
+
+            // Has this been synced before?
             if (key in existingBlocks) {             
-              // enumerate block children, and evaluate if they need updating
-              // TODO
+              const existing_block = await logseq.Editor.getBlock(existingBlocks[key]);
+              if (existing_block === null) {
+                console.error("Block not found, but we also just found it - which is pretty weird: ", existingBlocks[key]);
+                continue;
+              }
+
+              // find the bookmarks block
+              let existing_bookmark_blocks;
+              let existing_bookmark_block_uuid;
+
+              for (const child of existing_block!.children!) {
+                let child_block = await logseq.Editor.getBlock(child[1] as BlockEntity);
+
+                if (child_block!.content === "### Bookmarks") {
+                  existing_bookmark_blocks = child_block!.children;
+                  existing_bookmark_block_uuid = child[1];
+                  break;
+                }
+              }
+
+              if (existing_bookmark_blocks === undefined) {
+                console.error("Bookmarks not found for block ", existingBlocks[key]);
+                continue;
+              }
+
+              // iterate over bookmarks and build a dictionary for easy lookup
+              let existing_bookmarks = {};
+              for (const bookmark of existing_bookmark_blocks) {
+                let bookmark_block = await logseq.Editor.getBlock(bookmark[1] as BlockEntity);
+
+                const content_start = bookmark_block!.content!.indexOf("\n> ");     // not ideal
+                const content = bookmark_block!.content!.substring(content_start+3).replace('-', '\-');
+
+                existing_bookmarks[content] = bookmark[1];
+              }
+
+              // iterate over bookmarks in `block`, checking if they already exist
+              // the first child of `parsed_block` is the "### Bookmarks" block
+              for (const bookmark of parsed_block.children![0].children!) {
+                let key = bookmark.content.substring(2);
+
+                // does this parsed block have a personal note?
+                let parsed_personal_note = false;
+                if (bookmark.children && bookmark.children.length > 0) {
+                  parsed_personal_note = true;
+                }
+
+                // existing bookmark, check personal note
+                if (key in existing_bookmarks) {
+                  let existing_bookmark = await logseq.Editor.getBlock(existing_bookmarks[key]);
+                  
+                  // personal note exists in graph
+                  if (existing_bookmark!.children && existing_bookmark!.children!.length > 0) {
+                    let existing_note = existing_bookmark!.children![0];
+
+                    if (!parsed_personal_note) {
+                      // delete it
+                      await logseq.Editor.removeBlock(existing_note[1] as BlockUUID);
+                    } else {
+                      let existing_note_block = await logseq.Editor.getBlock(existing_note[1] as BlockEntity);
+
+                      // if the existing note is different, update it
+                      if (existing_note_block!.content !== bookmark.children![0].content) {
+                        await logseq.Editor.updateBlock(existing_note[1] as string, bookmark.children![0].content);
+                      }
+                    }
+                  } 
+                  // personal note does not exist in graph
+                  else {
+                    // add it
+                    if (parsed_personal_note) {
+                      await logseq.Editor.insertBatchBlock(existing_bookmark![1] as string, [bookmark.children![0]], {
+                        sibling: false
+                      })
+                    }
+                  }
+                } 
+                // new bookmark, add it
+                else {
+                  await logseq.Editor.insertBatchBlock(existing_bookmark_block_uuid, [bookmark], {
+                    sibling: false
+                  })
+                }
+              }
             } else {
-              await logseq.Editor.insertBatchBlock(targetBlock!.uuid, [block], {
+              await logseq.Editor.insertBatchBlock(targetBlock!.uuid, [parsed_block], {
                 sibling: false
               })
             }
@@ -299,7 +383,7 @@ function main () {
           syncProgress.increment(1);
         }
 
-        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 KOReader - Sync Started at ${syncTimeLabel}`)
+        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 KOReader - Sync Initated at ${syncTimeLabel}`)
         syncProgress.destruct();
       } catch (e) {
         logseq.UI.showMsg(e.toString(), 'warning')
