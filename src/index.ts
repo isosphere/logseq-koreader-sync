@@ -202,6 +202,7 @@ function main () {
 
         let targetBlock : BlockEntity | null = pageBlocksTree[0]!
 
+        const original_content = targetBlock?.content;
         if (targetBlock === null || targetBlock === undefined) {
           targetBlock = await logseq.Editor.insertBlock(currentPage.uuid, '🚀 Please Select KOReader Metadata Directory ...',)
         } else {
@@ -216,13 +217,23 @@ function main () {
         }
 
         if (!directoryHandle || !permission) {
+          try {
           directoryHandle = await window.showDirectoryPicker() // get a DirectoryHandle that will allow us to read the contents of the directory
+          } catch (e) {
+            if (original_content) {
+              await logseq.Editor.updateBlock(targetBlock!.uuid, original_content)
+            } else {
+              await logseq.Editor.updateBlock(targetBlock!.uuid, "Sync cancelled by user.")
+            }
+            console.error(e);
+            return;
+          }
           setStorage('logseq_koreader_sync__directoryHandle', directoryHandle);
         }        
 
         if (!directoryHandle) {
           console.error('No directory selected / found.')
-          return; // user cancelled, or something went wrong
+          return; // something went wrong
         }
 
         await logseq.Editor.updateBlock(targetBlock!.uuid, `# ⚙ Processing KOReader Annotations ...`)
