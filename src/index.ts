@@ -269,8 +269,12 @@ function main () {
           var block = lua_to_block(text);
 
           if (block) {
-            const key = block.properties!.authors + "___" + block.content.substring(3);
-
+            let key: string;
+            if (block.properties!.authors === undefined) {
+              key = "___" + block.content.substring(3);
+            } else {
+              key = block.properties!.authors + "___" + block.content.substring(3);
+            }
             if (key in existingBlocks) {             
               // enumerate block children, and evaluate if they need updating
               // TODO
