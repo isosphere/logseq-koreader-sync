@@ -10,7 +10,7 @@
   "default": "dist/index.html",
   "repository": {
     "type": "git",
-    "url": "https://github.com/isosphere/logseq-koreader-sync/tree/master/logseq-koreader-sync"
+    "url": "https://github.com/isosphere/logseq-koreader-sync/tree/main/"
   },
   "author": "Matthew Scheffel",
   "scripts": {
