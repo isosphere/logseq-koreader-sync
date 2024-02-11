@@ -225,16 +225,59 @@ function main () {
         let fileCount = 0;
         for await (const _ of walkDirectory(directoryHandle)) { fileCount++; };
 
+        // iterate over all blocks in this target page, and collect the titles, authors, and uuids and place them in a dictionary
+        let ret;
+        try {
+          ret = await logseq.DB.datascriptQuery(`
+          [
+              :find (pull ?b [:block/content :block/uuid]) ?authors
+              :where
+                [?b :block/parent ?p]
+                [?p :block/uuid #uuid "${targetBlock!.uuid}"]
+                [?b :block/properties ?props]
+                [(get ?props :authors) ?authors]
+          ]
+          `)
+        } catch (e) {
+          console.error("Error while iterating over blocks in the target page: ", e);
+          return;
+        }
+
+        const titleMatch : RegExp = /##\s+(.*?)\n/;
+
+        let existingBlocks = {}
+        for (const block of ret) {
+          const authors = block[1];
+          const content = block[0]["content"];
+          const match = content?.match(titleMatch);
+          let title = match[1];
+
+          const key = authors + "___" +  title;
+          if (!(key in existingBlocks)) {
+            existingBlocks[key] = block[0]["uuid"];
+          }
+        }
+
         const syncProgress = new ProgressNotification("Syncing Koreader Annotations to Logseq:", fileCount);
-        
         for await (const fileHandle of walkDirectory(directoryHandle)) {
           var text = await fileHandle.text();
           var block = lua_to_block(text);
 
           if (block) {
-            await logseq.Editor.insertBatchBlock(targetBlock!.uuid, [block], {
-              sibling: false
-            })
+            const key = block.properties!.authors + "___" + block.content.substring(3);
+
+            if (key in existingBlocks) {
+              await logseq.Editor.updateBlock(existingBlocks[key], block.content, block.properties);
+              
+              // enumerate block children, and evaluate if they need updating
+              // TODO
+
+
+            } else {
+              await logseq.Editor.insertBatchBlock(targetBlock!.uuid, [block], {
+                sibling: false
+              })
+            }
           }
           syncProgress.increment(1);
         }
