@@ -200,13 +200,27 @@ function main () {
   
         const pageBlocksTree = await logseq.Editor.getCurrentPageBlocksTree()
 
-        let targetBlock : BlockEntity | null = pageBlocksTree[0]!
+        let targetBlock : BlockEntity | null = null;
+        let warningBlockFound = false;
+        for (const block of pageBlocksTree) {
+          if (block?.content.includes("LKRS")) {
+            targetBlock = block;
+            continue;
+          }
+          else if (block?.content.includes("BEGIN_WARNING")) {
+            warningBlockFound = true;
+          }
+        }
+
+        if (!warningBlockFound) {
+          await logseq.Editor.insertBatchBlock(currentPage.uuid, [{ content: "\n#+BEGIN_WARNING\nPlease do not edit this page; stick to block references made elsewhere.\n#+END_WARNING" }], { sibling: false})
+        }
 
         const original_content = targetBlock?.content;
         if (targetBlock === null || targetBlock === undefined) {
-          targetBlock = await logseq.Editor.insertBlock(currentPage.uuid, '🚀 Please Select KOReader Metadata Directory ...',)
+          targetBlock = await logseq.Editor.insertBlock(currentPage.uuid, '🚀 LKRS: Please Select KOReader Metadata Directory ...',)
         } else {
-          await logseq.Editor.updateBlock(targetBlock!.uuid, `🚀 Please Select KOReader Metadata Directory ...`)
+          await logseq.Editor.updateBlock(targetBlock!.uuid, `🚀 LKRS: Please Select KOReader Metadata Directory ...`)
         }
 
         let directoryHandle : any = await getStorage('logseq_koreader_sync__directoryHandle');
@@ -223,7 +237,7 @@ function main () {
             if (original_content) {
               await logseq.Editor.updateBlock(targetBlock!.uuid, original_content)
             } else {
-              await logseq.Editor.updateBlock(targetBlock!.uuid, "Sync cancelled by user.")
+              await logseq.Editor.updateBlock(targetBlock!.uuid, "# ❌ LKRS: Sync cancelled by user.")
             }
             console.error(e);
             return;
@@ -236,7 +250,7 @@ function main () {
           return; // something went wrong
         }
 
-        await logseq.Editor.updateBlock(targetBlock!.uuid, `# ⚙ Processing KOReader Annotations ...`)
+        await logseq.Editor.updateBlock(targetBlock!.uuid, `# ⚙ LKRS: Processing KOReader Annotations ...`)
 
         // FIXME: change the max value to the number of files in the directory
         let fileCount = 0;
@@ -383,7 +397,8 @@ function main () {
           syncProgress.increment(1);
         }
 
-        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 KOReader - Sync Initated at ${syncTimeLabel}`)
+        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 LKRS: KOReader - Sync Initated at ${syncTimeLabel}`)
+        
         syncProgress.destruct();
       } catch (e) {
         logseq.UI.showMsg(e.toString(), 'warning')
