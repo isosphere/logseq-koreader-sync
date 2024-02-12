@@ -1,5 +1,5 @@
 # Logseq Koreader Sync
-<h3 align="center">A [KOReader](https://koreader.rocks/) to logseq syncing plugin.</h3>
+A [KOReader](https://koreader.rocks/) to [Logseq](https://logseq.com/) syncing plugin
 
 This is a tool to import your annotations from KOReader in a read-only format - this is a one directional synchronization[^1]. It is not affiliated with the KOReader project.
 
