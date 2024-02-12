@@ -23,8 +23,8 @@ jobs:
       - name: Build
         id: build
         run: |
-          npm install
-          parcel build --public-url . --no-source-maps index.html
+          npm ci
+          npm run build
           mkdir ${{ env.PLUGIN_NAME }}
           cp README.md package.json icon.png demo.gif ${{ env.PLUGIN_NAME }}
           mv dist ${{ env.PLUGIN_NAME }}
