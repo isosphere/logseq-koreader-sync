@@ -18,13 +18,12 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v1
         with:
-          node-version: "14.x" # You might need to adjust this value to your own version
+          node-version: "20.x" # You might need to adjust this value to your own version
       - name: Build
         id: build
         run: |
-          npm install -g yarn
-          yarn
-          yarn build
+          npm install
+          parcel build --public-url . --no-source-maps index.html
           mkdir ${{ env.PLUGIN_NAME }}
           cp README.md package.json icon.png demo.gif ${{ env.PLUGIN_NAME }}
           mv dist ${{ env.PLUGIN_NAME }}
