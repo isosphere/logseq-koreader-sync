@@ -397,7 +397,7 @@ function main () {
           syncProgress.increment(1);
         }
 
-        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 LKRS: KOReader - Sync Initated at ${syncTimeLabel}`)
+        await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 LKRS: KOReader - Sync Initiated at ${syncTimeLabel}`)
         
         syncProgress.destruct();
       } catch (e) {
