@@ -23,7 +23,7 @@ function truncateString(str, length) {
 const MAXIMUM_DESCRIPTION_LENGTH = 250; // FIXME: this should be a setting
 const COLLAPSE_BLOCKS = true; // FIXME: this should be a setting
 
-// this function is responsible for converting a KOReader metadata data structure into a Logseq block
+/** This function is responsible for converting a KOReader metadata data structure into a Logseq block. */
 function metadata_to_block(metadata: any): IBatchBlock | null {
   let bookmarks: IBatchBlock[] = [];
 
@@ -90,7 +90,7 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
   }
 }
 
-// uses luaparse to read a lua file and builds a metadata data structure to pass off to metadata_to_block
+/** Uses luaparse to read a lua file and builds a metadata data structure to pass off to `metadata_to_block` */
 function lua_to_block(text: string): IBatchBlock | null {
   const ast = luaparse(text, {
     comments: false,
@@ -141,7 +141,7 @@ function lua_to_block(text: string): IBatchBlock | null {
 }
 
 
-// used to find all of the KOReader metadata files in a directory and its subdirectories
+/** Used to find all of the KOReader metadata files in a directory and its subdirectories */
 async function* walkDirectory(directoryHandle: any) { // DirectoryHandle
   if (directoryHandle.kind === "file") {
     const file = await directoryHandle.getFile();
