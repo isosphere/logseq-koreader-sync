@@ -37,6 +37,9 @@ function metadata_to_block(metadata: any): IBatchBlock | null {
 }
 
 function handle_annotations_metadata(metadata: any): IBatchBlock | null {
+  if (typeof metadata.annotations === 'object' && Object.keys(metadata.annotations).length === 0) {
+    return null;
+  }
 
   let bookmarks: IBatchBlock[] = [];
 
@@ -45,7 +48,7 @@ function handle_annotations_metadata(metadata: any): IBatchBlock | null {
     authors = authors.replace(/\\\n/g, ', '); // this seems to be how KOReader stores multiple authors; at least from Calibre
   }
 
-  if (typeof metadata.annotations === 'object' && Object.keys(metadata.annotations).length === 0) {
+  if (!metadata.annotations) {
     return {
       content: `## ${metadata.doc_props.title}`,
       properties: {
