@@ -25,21 +25,103 @@ const COLLAPSE_BLOCKS = true; // FIXME: this should be a setting
 
 /** This function is responsible for converting a KOReader metadata data structure into a Logseq block. */
 function metadata_to_block(metadata: any): IBatchBlock | null {
-  let bookmarks: IBatchBlock[] = [];
-
   if (metadata.doc_props === 'object' && Object.keys(metadata.doc_props).length === 0) {
     return null;
   }
 
-  if (typeof metadata.bookmarks === 'object' && Object.keys(metadata.bookmarks).length === 0) {
+  if (!metadata.annotations) {
+    return handle_bookmarks_metadata(metadata);
+  } else {
+    return handle_annotations_metadata(metadata);
+  }
+}
+
+function handle_annotations_metadata(metadata: any): IBatchBlock | null {
+  if (typeof metadata.annotations === 'object' && Object.keys(metadata.annotations).length === 0) {
     return null;
   }
+
+  let bookmarks: IBatchBlock[] = [];
 
   let authors = metadata.doc_props.authors;
   if (authors) {
     authors = authors.replace(/\\\n/g, ', '); // this seems to be how KOReader stores multiple authors; at least from Calibre
   }
-  
+
+  if (!metadata.annotations) {
+    return {
+      content: `## ${metadata.doc_props.title}`,
+      properties: {
+        'authors': authors,
+        'description': truncateString(metadata.doc_props.description, MAXIMUM_DESCRIPTION_LENGTH),
+        'language': metadata.doc_props.language,
+      }
+    }
+  }
+
+  for (const annotation of metadata.annotations) {
+    let personal_note: IBatchBlock[] = [];
+    if (annotation.note) {
+      personal_note.push({
+        content: annotation.note.replace('-', '\\-'),
+      });
+    }
+
+    let text_content: string = "> (no text available)";
+    if (!annotation.pos0) {
+      text_content = "> Page bookmark";
+    } else if (annotation.text) {
+      text_content = `> ${annotation.text.replace('-', '\\-')}`; // escape dashes; they're used for lists in logseq
+    }
+
+    let annotation_date: string = annotation.datetime;
+    if (annotation.datetime_updated) {
+        annotation_date = annotation.datetime_updated;
+    }
+
+    bookmarks.push(
+      {
+        content: text_content,
+        properties: {
+          'datetime': annotation_date,
+          'page': annotation.pageno,
+          'chapter': annotation.chapter,
+          'collapsed': COLLAPSE_BLOCKS && personal_note.length > 0,
+        },
+        children: personal_note
+      }
+    )
+  }
+
+  return {
+    content: `## ${metadata.doc_props.title}`,
+    properties: {
+      'authors': authors,
+      'description': truncateString(metadata.doc_props.description, MAXIMUM_DESCRIPTION_LENGTH),
+      'language': metadata.doc_props.language,
+      'collapsed': COLLAPSE_BLOCKS,
+    },
+    children: [
+      {
+        content: `### Bookmarks`,
+        children: bookmarks
+      }
+    ]
+  }
+}
+
+function handle_bookmarks_metadata(metadata: any): IBatchBlock | null {
+  if (typeof metadata.bookmarks === 'object' && Object.keys(metadata.bookmarks).length === 0) {
+    return null;
+  }
+
+  let bookmarks: IBatchBlock[] = [];
+
+  let authors = metadata.doc_props.authors;
+  if (authors) {
+    authors = authors.replace(/\\\n/g, ', '); // this seems to be how KOReader stores multiple authors; at least from Calibre
+  }
+
   if (!metadata.bookmarks) {
     return {
       content: `## ${metadata.doc_props.title}`,
@@ -121,7 +203,7 @@ function lua_to_block(text: string): IBatchBlock | null {
         const subtarget = target.value.fields[subfield];
         if (subtarget.value.type === "TableConstructorExpression") {
           const sub_dictionary = {};
-          
+
           for (const subsubfield in subtarget.value.fields) {
             const subsubtarget = subtarget.value.fields[subsubfield];
             const subkey = subsubtarget.key.raw.replace(/"/g, '');
@@ -187,14 +269,14 @@ function main () {
     async syncKOReader () {
       const info = await logseq.App.getUserConfigs()
       if (loading) return
-  
+
       const pageName = '_logseq-koreader-sync'
       const syncTimeLabel = (new Date()).toLocaleString() // date and time as of now
-  
+
       logseq.App.pushState('page', { name: pageName })
-  
+
       await delay(300) // wait for our UI elements to exist. FIXME: replace with check/sleep loop
-  
+
       loading = true
 
       const currentPage = await logseq.Editor.getCurrentPage()
@@ -226,7 +308,7 @@ function main () {
       }
 
       let directoryHandle : any = await getStorage('logseq_koreader_sync__directoryHandle');
-      
+
       let permission;
       if (directoryHandle) {
         permission = await verifyPermission(directoryHandle);
@@ -245,7 +327,7 @@ function main () {
           return;
         }
         setStorage('logseq_koreader_sync__directoryHandle', directoryHandle);
-      }        
+      }
 
       if (!directoryHandle) {
         console.error('No directory selected / found.')
@@ -308,7 +390,7 @@ function main () {
           }
 
           // Has this been synced before?
-          if (key in existingBlocks) {             
+          if (key in existingBlocks) {
             const existing_block = await logseq.Editor.getBlock(existingBlocks[key]);
             if (existing_block === null) {
               console.error("Block not found, but we also just found it - which is pretty weird: ", existingBlocks[key]);
@@ -360,7 +442,7 @@ function main () {
               // existing bookmark, check personal note
               if (key in existing_bookmarks) {
                 let existing_bookmark = await logseq.Editor.getBlock(existing_bookmarks[key]);
-                
+
                 // personal note exists in graph
                 if (existing_bookmark!.children && existing_bookmark!.children!.length > 0) {
                   let existing_note = existing_bookmark!.children![0];
@@ -376,7 +458,7 @@ function main () {
                       await logseq.Editor.updateBlock(existing_note[1] as string, bookmark.children![0].content);
                     }
                   }
-                } 
+                }
                 // personal note does not exist in graph
                 else {
                   // add it
@@ -386,7 +468,7 @@ function main () {
                     })
                   }
                 }
-              } 
+              }
               // new bookmark, add it
               else {
                 await logseq.Editor.insertBatchBlock(existing_bookmark_block_uuid, [bookmark], {
@@ -404,7 +486,7 @@ function main () {
       }
 
       await logseq.Editor.updateBlock(targetBlock!.uuid, `# 📚 LKRS: KOReader - Sync Initiated at ${syncTimeLabel}`)
-      
+
       syncProgress.destruct();
       loading = false
     }
