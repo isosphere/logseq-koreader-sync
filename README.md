@@ -1,9 +1,8 @@
 # Logseq Koreader Sync
 A [KOReader](https://koreader.rocks/) to [Logseq](https://logseq.com/) syncing plugin
 
-⚠️ Known to work with KOReader 2024.03.1. KOReader metadata formats change and we are unable to detect this. 
+Known to work with KOReader 2025.04.  
 Built with a separate sidecar directory (see https://github.com/koreader/koreader/pull/10074) in mind.
-
 
 This is a tool to import your annotations from KOReader in a read-only format - this is a one directional synchronization[^1]. It is not affiliated with the KOReader project.
 
