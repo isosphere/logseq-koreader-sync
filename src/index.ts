@@ -40,7 +40,7 @@ const COLLAPSE_BLOCKS = true; // FIXME: this should be a setting
 
 /** This function is responsible for converting a KOReader metadata data structure into a Logseq block. */
 function metadata_to_block(metadata: any): IBatchBlock | null {
-  if (metadata.doc_props === 'object' && Object.keys(metadata.doc_props).length === 0) {
+  if (!metadata.doc_props || typeof metadata.doc_props !== 'object' || Object.keys(metadata.doc_props).length === 0) {
     return null;
   }
 
